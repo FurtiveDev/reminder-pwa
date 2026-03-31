@@ -198,7 +198,7 @@
 
     navigator.serviceWorker.ready.then(function(reg) {
       return messaging.getToken({
-        vapidKey: 'BC-notification-will-be-added-later',
+        vapidKey: 'BKQYaPfqw5pfmwASR3PeYpD2doRmXGNo2YmVJsO1436nFa8pUjH0cgBV3xTNwHhnLJkQ3NDMK5XFjm14lKM37ko',
         serviceWorkerRegistration: reg
       });
     }).then(function(token) {
