@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=no">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="Напоминалка">
+  <meta name="theme-color" content="#007aff">
+  <meta name="description" content="Приложение-напоминалка с дедлайнами">
+  <link rel="manifest" href="manifest.json">
+  <link rel="apple-touch-icon" href="icons/icon-180.png">
+  <link rel="icon" href="icons/icon-192.png">
+  <link rel="stylesheet" href="style.css">
+  <title>Напоминалка</title>
+</head>
+<body>
+  <div class="container">
+    <header class="header">
+      <div class="date-display" id="dateDisplay"></div>
+    </header>
+
+    <main class="task-list" id="taskList"></main>
+
+    <footer class="footer">
+      <div class="stats" id="stats"></div>
+    </footer>
+  </div>
+
+  <button class="fab" id="addBtn" aria-label="Добавить задачу">+</button>
+
+  <div class="modal-overlay" id="modalOverlay">
+    <div class="modal" id="taskModal">
+      <h2>Новая задача</h2>
+      <form id="taskForm">
+        <div class="form-group">
+          <label for="taskTitle">Название</label>
+          <input type="text" id="taskTitle" placeholder="Что нужно сделать?" required autocomplete="off">
+        </div>
+
+        <div class="form-row">
+          <div class="form-group">
+            <label for="taskDate">Дата</label>
+            <input type="date" id="taskDate" required>
+          </div>
+          <div class="form-group">
+            <label for="taskTime">Время</label>
+            <input type="time" id="taskTime" required>
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label>Приоритет</label>
+          <div class="priority-options">
+            <label class="priority-option">
+              <input type="radio" name="priority" value="high">
+              <span class="priority-btn priority-high">🔴 Срочно</span>
+            </label>
+            <label class="priority-option">
+              <input type="radio" name="priority" value="medium">
+              <span class="priority-btn priority-medium">🟡 Важно</span>
+            </label>
+            <label class="priority-option">
+              <input type="radio" name="priority" value="none" checked>
+              <span class="priority-btn priority-none">⚪ Без метки</span>
+            </label>
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label class="repeat-toggle">
+            <input type="checkbox" id="taskRepeat">
+            <span class="toggle-slider"></span>
+            <span class="toggle-label">Повторять ежедневно</span>
+          </label>
+        </div>
+
+        <div class="form-actions">
+          <button type="button" class="btn btn-cancel" id="cancelBtn">Отмена</button>
+          <button type="submit" class="btn btn-add">Добавить</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
