@@ -2,18 +2,29 @@
   'use strict';
 
   const STORAGE_KEY = 'reminder_tasks';
+  const TOKEN_KEY = 'fcm_token';
   const DAY_NAMES = ['воскресенье','понедельник','вторник','среда','четверг','пятница','суббота'];
   const MONTH_NAMES = ['января','февраля','марта','апреля','мая','июня','июля','августа','сентября','октября','ноября','декабря'];
 
+  const firebaseConfig = {
+    apiKey: "AIzaSyBdpgUAtBiGyJ2t5YGEPfTtaiZPkawwA8M",
+    authDomain: "pwa-notif-25eea.firebaseapp.com",
+    projectId: "pwa-notif-25eea",
+    storageBucket: "pwa-notif-25eea.firebasestorage.app",
+    messagingSenderId: "623374900657",
+    appId: "1:623374900657:web:647e9a59e6062a01aef190"
+  };
+
   let tasks = [];
   let timers = [];
+  let messaging = null;
 
   const $ = s => document.querySelector(s);
   const $$ = s => document.querySelectorAll(s);
 
   function load() { try { tasks = JSON.parse(localStorage.getItem(STORAGE_KEY)) || []; } catch(e) { tasks = []; } }
   function save() { localStorage.setItem(STORAGE_KEY, JSON.stringify(tasks)); }
-  function id() { return Date.now().toString(36) + Math.random().toString(36).substr(2,5); }
+  function genId() { return Date.now().toString(36) + Math.random().toString(36).substr(2,5); }
   function esc(s) { const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
 
   function fmtDate(ds) {
@@ -25,7 +36,7 @@
     return d.getDate() + ' ' + MONTH_NAMES[d.getMonth()];
   }
 
-  function status(task) {
+  function getSt(task) {
     if (task.completed) return 'done';
     const diff = new Date(task.date+'T'+task.time) - new Date();
     if (diff < 0) return 'overdue';
@@ -33,12 +44,12 @@
     return 'ok';
   }
 
-  function header() {
+  function updateHeader() {
     const n = new Date();
     $('#dateDisplay').textContent = n.getDate() + ' ' + MONTH_NAMES[n.getMonth()] + ', ' + DAY_NAMES[n.getDay()];
   }
 
-  function sort(a) {
+  function sortTasks(a) {
     const p = { high:0, medium:1, none:2 };
     return [...a].sort((x,y) => {
       if (x.completed !== y.completed) return x.completed ? 1 : -1;
@@ -50,16 +61,16 @@
 
   function render() {
     const el = $('#taskList');
-    const s = sort(tasks);
+    const s = sortTasks(tasks);
 
     if (!s.length) {
       el.innerHTML = '<div class="empty"><div class="empty-box">📋</div><div class="empty-title">Нет задач</div><div class="empty-hint">Нажмите + чтобы добавить</div></div>';
-      stats();
+      updateStats();
       return;
     }
 
     el.innerHTML = s.map(t => {
-      const st = status(t);
+      const st = getSt(t);
       const mc = st==='overdue' ? 'overdue' : st==='soon' ? 'soon' : '';
       const ss = t.priority==='high' ? 's-h' : t.priority==='medium' ? 's-m' : 's-n';
       const meta = fmtDate(t.date) + ', ' + t.time;
@@ -77,11 +88,11 @@
         '</div></div>';
     }).join('');
 
-    bind();
-    stats();
+    bindSwipe();
+    updateStats();
   }
 
-  function stats() {
+  function updateStats() {
     const el = $('#stats');
     const today = new Date().toISOString().split('T')[0];
     const tt = tasks.filter(t => t.date === today);
@@ -91,16 +102,16 @@
     el.textContent = 'Выполнено: ' + done.length + '/' + tt.length + ' задач сегодня';
   }
 
-  function toggle(id) {
-    const t = tasks.find(x => x.id === id);
+  function toggleTask(taskId) {
+    const t = tasks.find(x => x.id === taskId);
     if (!t) return;
-    const card = document.querySelector('.task-card[data-id="'+id+'"]');
+    const card = document.querySelector('.task-card[data-id="'+taskId+'"]');
     if (!t.completed) {
       t.completed = true; t.completedAt = new Date().toISOString();
       if (card) card.classList.add('completing');
       if (t.repeat) {
         const nd = new Date(t.date+'T'+t.time); nd.setDate(nd.getDate()+1);
-        tasks.push({...t, id: id(), date: nd.toISOString().split('T')[0], completed: false, completedAt: null, createdAt: new Date().toISOString()});
+        tasks.push({...t, id: genId(), date: nd.toISOString().split('T')[0], completed: false, completedAt: null, createdAt: new Date().toISOString()});
       }
     } else {
       t.completed = false; t.completedAt = null;
@@ -109,19 +120,17 @@
     setTimeout(render, 300);
   }
 
-  function del(id) {
-    const card = document.querySelector('.task-card[data-id="'+id+'"]');
+  function deleteTask(taskId) {
+    const card = document.querySelector('.task-card[data-id="'+taskId+'"]');
     if (card) {
       card.classList.add('removing');
-      setTimeout(() => { tasks = tasks.filter(t => t.id !== id); save(); render(); }, 250);
+      setTimeout(() => { tasks = tasks.filter(t => t.id !== taskId); save(); render(); }, 250);
     }
   }
 
-  function bind() {
+  function bindSwipe() {
     $$('.task-card').forEach(c => {
-      c.addEventListener('touchstart', function(e) {
-        this._sx = e.touches[0].clientX;
-      }, {passive:true});
+      c.addEventListener('touchstart', function(e) { this._sx = e.touches[0].clientX; }, {passive:true});
       c.addEventListener('touchmove', function(e) {
         if (!this._sx) return;
         const d = this._sx - e.touches[0].clientX;
@@ -130,26 +139,25 @@
       }, {passive:true});
       c.addEventListener('touchend', function() { this._sx = null; });
     });
-
-    $$('.task-check').forEach(b => b.onclick = e => { e.stopPropagation(); toggle(b.dataset.id); });
-    $$('.task-del').forEach(b => b.onclick = e => { e.stopPropagation(); del(b.dataset.id); });
+    $$('.task-check').forEach(b => b.onclick = e => { e.stopPropagation(); toggleTask(b.dataset.id); });
+    $$('.task-del').forEach(b => b.onclick = e => { e.stopPropagation(); deleteTask(b.dataset.id); });
   }
 
-  function open() {
+  function openSheet() {
     $('#modalOverlay').classList.add('on');
     const d = new Date(); d.setMinutes(d.getMinutes()+30);
     $('#taskDate').value = new Date().toISOString().split('T')[0];
     $('#taskTime').value = d.toTimeString().slice(0,5);
     setTimeout(() => $('#taskTitle').focus(), 350);
-    if (Notification.permission === 'default') Notification.requestPermission();
+    requestNotifPermission();
   }
 
-  function close() {
+  function closeSheet() {
     $('#modalOverlay').classList.remove('on');
     $('#taskForm').reset();
   }
 
-  function add(e) {
+  function addTask(e) {
     e.preventDefault();
     const title = $('#taskTitle').value.trim();
     const date = $('#taskDate').value;
@@ -157,11 +165,65 @@
     const priority = document.querySelector('input[name="priority"]:checked').value;
     const repeat = $('#taskRepeat').checked;
     if (!title || !date || !time) return;
-    tasks.push({ id: id(), title, date, time, priority, repeat, completed: false, completedAt: null, createdAt: new Date().toISOString() });
-    save(); close(); render(); notify();
+    tasks.push({ id: genId(), title, date, time, priority, repeat, completed: false, completedAt: null, createdAt: new Date().toISOString() });
+    save(); closeSheet(); render(); scheduleLocalNotif();
   }
 
-  function notify() {
+  // Firebase Cloud Messaging
+  function initFCM() {
+    if (typeof firebase === 'undefined') return;
+    try {
+      firebase.initializeApp(firebaseConfig);
+      messaging = firebase.messaging();
+    } catch(e) {
+      console.warn('Firebase init error:', e);
+    }
+  }
+
+  function requestNotifPermission() {
+    if (Notification.permission === 'granted') {
+      getFCMToken();
+      return;
+    }
+    if (Notification.permission === 'default') {
+      Notification.requestPermission().then(function(perm) {
+        if (perm === 'granted') getFCMToken();
+      });
+    }
+  }
+
+  function getFCMToken() {
+    if (!messaging) return;
+    if (localStorage.getItem(TOKEN_KEY)) return;
+
+    navigator.serviceWorker.ready.then(function(reg) {
+      return messaging.getToken({
+        vapidKey: 'BC-notification-will-be-added-later',
+        serviceWorkerRegistration: reg
+      });
+    }).then(function(token) {
+      if (token) {
+        localStorage.setItem(TOKEN_KEY, token);
+        console.log('FCM Token:', token);
+      }
+    }).catch(function(err) {
+      console.warn('FCM token error:', err);
+    });
+  }
+
+  function onForegroundMessage() {
+    if (!messaging) return;
+    messaging.onMessage(function(payload) {
+      const title = payload.notification?.title || 'Напоминалка';
+      const body = payload.notification?.body || '';
+      if (Notification.permission === 'granted') {
+        try { new Notification(title, { body: body, icon: 'icons/icon-192.png', requireInteraction: true }); } catch(e) {}
+      }
+    });
+  }
+
+  // Local notifications (fallback when app is open/backgrounded)
+  function scheduleLocalNotif() {
     timers.forEach(t => clearTimeout(t)); timers = [];
     tasks.forEach(t => {
       if (t.completed) return;
@@ -170,21 +232,42 @@
       [{ms:diff-3600000,title:'⏰ Через час дедлайн!',body:'Задача: '+t.title,tag:t.id+'-1h'},
        {ms:diff-900000,title:'⏰ Через 15 минут!',body:'Задача: '+t.title,tag:t.id+'-15m'},
        {ms:diff,title:'🔔 Дедлайн!',body:'Задача: '+t.title,tag:t.id+'-now'}
-      ].forEach(o => { if (o.ms > 0) timers.push(setTimeout(() => { if (Notification.permission==='granted') try { new Notification(o.title,{body:o.body,icon:'icons/icon-192.png',tag:o.tag,requireInteraction:true}); } catch(e){} }, o.ms)); });
+      ].forEach(o => {
+        if (o.ms > 0) timers.push(setTimeout(function() {
+          if (Notification.permission==='granted') try { new Notification(o.title,{body:o.body,icon:'icons/icon-192.png',tag:o.tag,requireInteraction:true}); } catch(e){}
+        }, o.ms));
+      });
     });
   }
 
-  function sw() { if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(()=>{}); }
-
-  function events() {
-    $('#addBtn').addEventListener('click', open);
-    $('#cancelBtn').addEventListener('click', close);
-    $('#taskForm').addEventListener('submit', add);
-    $('#modalOverlay').addEventListener('click', e => { if (e.target === e.currentTarget) close(); });
-    document.addEventListener('visibilitychange', () => { if (!document.hidden) { load(); render(); notify(); } });
+  function registerSW() {
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('sw.js').catch(function(){});
+    }
   }
 
-  function init() { load(); header(); render(); events(); sw(); notify(); }
+  function bindEvents() {
+    $('#addBtn').addEventListener('click', openSheet);
+    $('#cancelBtn').addEventListener('click', closeSheet);
+    $('#taskForm').addEventListener('submit', addTask);
+    $('#modalOverlay').addEventListener('click', e => { if (e.target === e.currentTarget) closeSheet(); });
+    document.addEventListener('visibilitychange', function() {
+      if (!document.hidden) { load(); render(); scheduleLocalNotif(); }
+    });
+  }
+
+  function init() {
+    load();
+    updateHeader();
+    render();
+    bindEvents();
+    registerSW();
+    initFCM();
+    scheduleLocalNotif();
+    onForegroundMessage();
+    requestNotifPermission();
+  }
+
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);
   else init();
 })();

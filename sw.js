@@ -1,4 +1,18 @@
-const CACHE_NAME = 'reminder-pwa-v3';
+importScripts('https://www.gstatic.com/firebasejs/11.6.0/firebase-app-compat.js');
+importScripts('https://www.gstatic.com/firebasejs/11.6.0/firebase-messaging-compat.js');
+
+firebase.initializeApp({
+  apiKey: "AIzaSyBdpgUAtBiGyJ2t5YGEPfTtaiZPkawwA8M",
+  authDomain: "pwa-notif-25eea.firebaseapp.com",
+  projectId: "pwa-notif-25eea",
+  storageBucket: "pwa-notif-25eea.firebasestorage.app",
+  messagingSenderId: "623374900657",
+  appId: "1:623374900657:web:647e9a59e6062a01aef190"
+});
+
+const messaging = firebase.messaging();
+
+const CACHE_NAME = 'reminder-pwa-v4';
 
 self.addEventListener('install', event => {
   event.waitUntil(
@@ -40,18 +54,19 @@ self.addEventListener('fetch', event => {
   );
 });
 
-self.addEventListener('push', event => {
-  let data = { title: 'Напоминалка', body: 'Есть незавершённые задачи' };
-  if (event.data) { try { data = event.data.json(); } catch (e) {} }
-  event.waitUntil(
-    self.registration.showNotification(data.title, {
-      body: data.body,
-      icon: './icons/icon-192.png',
-      badge: './icons/icon-192.png',
-      tag: data.tag || 'reminder',
-      requireInteraction: true
-    })
-  );
+messaging.onBackgroundMessage(function(payload) {
+  const title = payload.notification?.title || 'Напоминалка';
+  const body = payload.notification?.body || '';
+  const tag = payload.data?.tag || 'reminder';
+
+  return self.registration.showNotification(title, {
+    body: body,
+    icon: './icons/icon-192.png',
+    badge: './icons/icon-192.png',
+    tag: tag,
+    requireInteraction: true,
+    data: payload.data
+  });
 });
 
 self.addEventListener('notificationclick', event => {
