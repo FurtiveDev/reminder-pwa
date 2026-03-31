@@ -293,22 +293,68 @@
     } catch(e) {}
   }
 
+  // Badge on app icon
+  function updateBadge() {
+    const overdue = tasks.filter(t => !t.completed && new Date(t.date+'T'+t.time) < new Date()).length;
+    if ('setAppBadge' in navigator) {
+      if (overdue > 0) navigator.setAppBadge(overdue).catch(function(){});
+      else navigator.clearAppBadge().catch(function(){});
+    }
+  }
+
+  // Sound alert for overdue tasks
+  function playAlert() {
+    try {
+      var ctx = new (window.AudioContext || window.webkitAudioContext)();
+      var osc = ctx.createOscillator();
+      var gain = ctx.createGain();
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.frequency.value = 880;
+      osc.type = 'sine';
+      gain.gain.setValueAtTime(0.3, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.5);
+      osc.start(ctx.currentTime);
+      osc.stop(ctx.currentTime + 0.5);
+    } catch(e) {}
+  }
+
+  // Check overdue tasks on app open
+  function checkOverdueOnOpen() {
+    var overdue = tasks.filter(function(t) { return !t.completed && new Date(t.date+'T'+t.time) < new Date(); });
+    if (overdue.length === 0) return;
+    if (Notification.permission === 'granted') {
+      var titles = overdue.slice(0, 3).map(function(t) { return t.title; }).join(', ');
+      var extra = overdue.length > 3 ? ' и ещё ' + (overdue.length - 3) : '';
+      try {
+        new Notification('⚠️ ' + overdue.length + ' просроченных задач!', {
+          body: titles + extra,
+          icon: 'icons/icon-192.png',
+          tag: 'overdue-check',
+          requireInteraction: true
+        });
+      } catch(e) {}
+    }
+    playAlert();
+  }
+
   // Local notifications
   function scheduleLocalNotif() {
     timers.forEach(t => clearTimeout(t)); timers = [];
     tasks.forEach(t => {
       if (t.completed) return;
-      const dl = new Date(t.date+'T'+t.time);
-      const diff = dl - new Date();
+      var dl = new Date(t.date+'T'+t.time);
+      var diff = dl - new Date();
       [{ms:diff-3600000,title:'⏰ Через час дедлайн!',body:'Задача: '+t.title,tag:t.id+'-1h'},
        {ms:diff-900000,title:'⏰ Через 15 минут!',body:'Задача: '+t.title,tag:t.id+'-15m'},
        {ms:diff,title:'🔔 Дедлайн!',body:'Задача: '+t.title,tag:t.id+'-now'}
-      ].forEach(o => {
+      ].forEach(function(o) {
         if (o.ms > 0) timers.push(setTimeout(function() {
           if (Notification.permission==='granted') try { new Notification(o.title,{body:o.body,icon:'icons/icon-192.png',tag:o.tag,requireInteraction:true}); } catch(e){}
         }, o.ms));
       });
     });
+    updateBadge();
   }
 
   function registerSW() {
@@ -321,7 +367,7 @@
     $('#taskForm').addEventListener('submit', addTask);
     $('#modalOverlay').addEventListener('click', e => { if (e.target === e.currentTarget) closeSheet(); });
     document.addEventListener('visibilitychange', function() {
-      if (!document.hidden) { load(); render(); scheduleLocalNotif(); }
+      if (!document.hidden) { load(); render(); scheduleLocalNotif(); checkOverdueOnOpen(); }
     });
   }
 
@@ -335,6 +381,7 @@
     scheduleLocalNotif();
     onForegroundMessage();
     requestNotifPermission();
+    setTimeout(checkOverdueOnOpen, 1000);
   }
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);
