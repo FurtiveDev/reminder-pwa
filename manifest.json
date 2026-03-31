@@ -2,10 +2,10 @@
   "name": "Напоминалка",
   "short_name": "Напоминалка",
   "description": "PWA-приложение для напоминаний с дедлайнами",
-  "start_url": "/",
-  "scope": "/",
+  "start_url": ".",
+  "scope": ".",
   "display": "standalone",
-  "background_color": "#ffffff",
+  "background_color": "#f2f2f7",
   "theme_color": "#007aff",
   "orientation": "portrait",
   "icons": [
