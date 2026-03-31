@@ -24,16 +24,33 @@
 
   function load() { try { tasks = JSON.parse(localStorage.getItem(STORAGE_KEY)) || []; } catch(e) { tasks = []; } }
   function save() { localStorage.setItem(STORAGE_KEY, JSON.stringify(tasks)); }
-  function genId() { return Date.now().toString(36) + Math.random().toString(36).substr(2,5); }
+  function genId() { return Date.now().toString(36) + Math.random().toString(36).slice(-5); }
   function esc(s) { const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
 
+  // FIX: use local date, not UTC
+  function localDateStr(d) {
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return y + '-' + m + '-' + day;
+  }
+
   function fmtDate(ds) {
-    const d = new Date(ds), t = new Date(), tm = new Date(t);
-    tm.setDate(tm.getDate() + 1);
-    const a = d.toISOString().split('T')[0];
-    if (a === t.toISOString().split('T')[0]) return 'сегодня';
-    if (a === tm.toISOString().split('T')[0]) return 'завтра';
+    const today = localDateStr(new Date());
+    const tomorrow = localDateStr(new Date(Date.now() + 86400000));
+    if (ds === today) return 'сегодня';
+    if (ds === tomorrow) return 'завтра';
+    const d = new Date(ds + 'T00:00:00');
     return d.getDate() + ' ' + MONTH_NAMES[d.getMonth()];
+  }
+
+  function getDateGroup(ds) {
+    const today = localDateStr(new Date());
+    const tomorrow = localDateStr(new Date(Date.now() + 86400000));
+    if (ds < today) return 'overdue';
+    if (ds === today) return 'today';
+    if (ds === tomorrow) return 'tomorrow';
+    return 'later';
   }
 
   function getSt(task) {
@@ -46,55 +63,111 @@
 
   function updateHeader() {
     const n = new Date();
-    $('#dateDisplay').textContent = n.getDate() + ' ' + MONTH_NAMES[n.getMonth()] + ', ' + DAY_NAMES[n.getDay()];
+    const dateStr = n.getDate() + ' ' + MONTH_NAMES[n.getMonth()] + ', ' + DAY_NAMES[n.getDay()];
+    $('#dateDisplay').textContent = dateStr;
+
+    const overdue = tasks.filter(t => !t.completed && new Date(t.date+'T'+t.time) < new Date()).length;
+    const subtitle = $('.header-sub');
+    if (overdue > 0) {
+      subtitle.textContent = overdue + ' просрочено';
+      subtitle.style.color = 'var(--red)';
+    } else {
+      subtitle.textContent = tasks.filter(t => !t.completed).length + ' задач';
+      subtitle.style.color = '';
+    }
   }
 
-  function sortTasks(a) {
+  function sortTasks(arr) {
     const p = { high:0, medium:1, none:2 };
-    return [...a].sort((x,y) => {
-      if (x.completed !== y.completed) return x.completed ? 1 : -1;
-      const px = p[x.priority]??2, py = p[y.priority]??2;
-      if (px !== py) return px - py;
-      return new Date(x.date+'T'+x.time) - new Date(y.date+'T'+y.time);
+    return [...arr].sort((a, b) => {
+      if (a.completed !== b.completed) return a.completed ? 1 : -1;
+      const pa = p[a.priority]??2, pb = p[b.priority]??2;
+      if (pa !== pb) return pa - pb;
+      return new Date(a.date+'T'+a.time) - new Date(b.date+'T'+b.time);
     });
+  }
+
+  function renderCard(t) {
+    const st = getSt(t);
+    const mc = st==='overdue' ? 'overdue' : st==='soon' ? 'soon' : '';
+    const ss = t.priority==='high' ? 's-h' : t.priority==='medium' ? 's-m' : 's-n';
+    const meta = fmtDate(t.date) + ', ' + t.time;
+    return '<div class="task-card'+(t.completed?' completed':'')+'" data-id="'+t.id+'">' +
+      '<div class="task-del" data-id="'+t.id+'">🗑</div>' +
+      '<div class="task-main">' +
+        '<div class="task-strip '+ss+'"></div>' +
+        '<button class="task-check" data-id="'+t.id+'"><svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg></button>' +
+        '<div class="task-info">' +
+          '<div class="task-title">'+esc(t.title)+'</div>' +
+          '<div class="task-meta '+mc+'">'+meta+
+            (t.repeat ? '<span class="meta-sep"></span><span class="meta-repeat">ежедневно</span>' : '') +
+          '</div>' +
+        '</div>' +
+      '</div></div>';
   }
 
   function render() {
     const el = $('#taskList');
-    const s = sortTasks(tasks);
+    const sorted = sortTasks(tasks);
 
-    if (!s.length) {
+    if (!sorted.length) {
       el.innerHTML = '<div class="empty"><div class="empty-box">📋</div><div class="empty-title">Нет задач</div><div class="empty-hint">Нажмите + чтобы добавить</div></div>';
       updateStats();
+      updateHeader();
       return;
     }
 
-    el.innerHTML = s.map(t => {
-      const st = getSt(t);
-      const mc = st==='overdue' ? 'overdue' : st==='soon' ? 'soon' : '';
-      const ss = t.priority==='high' ? 's-h' : t.priority==='medium' ? 's-m' : 's-n';
-      const meta = fmtDate(t.date) + ', ' + t.time;
-      return '<div class="task-card'+(t.completed?' completed':'')+'" data-id="'+t.id+'">' +
-        '<div class="task-del" data-id="'+t.id+'">🗑</div>' +
-        '<div class="task-main">' +
-          '<div class="task-strip '+ss+'"></div>' +
-          '<button class="task-check" data-id="'+t.id+'"><svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg></button>' +
-          '<div class="task-info">' +
-            '<div class="task-title">'+esc(t.title)+'</div>' +
-            '<div class="task-meta '+mc+'">'+meta+
-              (t.repeat ? '<span class="meta-sep"></span><span class="meta-repeat">ежедневно</span>' : '') +
-            '</div>' +
-          '</div>' +
-        '</div></div>';
-    }).join('');
+    // Group tasks by date
+    const groups = { overdue: [], today: [], tomorrow: [], later: [] };
+    sorted.forEach(t => {
+      if (t.completed) return;
+      const g = getDateGroup(t.date);
+      if (groups[g]) groups[g].push(t);
+    });
 
+    let html = '';
+
+    if (groups.overdue.length) {
+      html += '<div class="section"><div class="section-title section-overdue">Просроченные</div>';
+      groups.overdue.forEach(t => html += renderCard(t));
+      html += '</div>';
+    }
+
+    if (groups.today.length) {
+      html += '<div class="section"><div class="section-title">Сегодня</div>';
+      groups.today.forEach(t => html += renderCard(t));
+      html += '</div>';
+    }
+
+    if (groups.tomorrow.length) {
+      html += '<div class="section"><div class="section-title">Завтра</div>';
+      groups.tomorrow.forEach(t => html += renderCard(t));
+      html += '</div>';
+    }
+
+    if (groups.later.length) {
+      html += '<div class="section"><div class="section-title">Позже</div>';
+      groups.later.forEach(t => html += renderCard(t));
+      html += '</div>';
+    }
+
+    // Completed tasks at the bottom
+    const completed = sorted.filter(t => t.completed);
+    if (completed.length) {
+      html += '<div class="section"><div class="section-title">Выполнено</div>';
+      completed.forEach(t => html += renderCard(t));
+      html += '</div>';
+    }
+
+    el.innerHTML = html;
     bindSwipe();
     updateStats();
+    updateHeader();
   }
 
   function updateStats() {
     const el = $('#stats');
-    const today = new Date().toISOString().split('T')[0];
+    const today = localDateStr(new Date());
     const tt = tasks.filter(t => t.date === today);
     const done = tt.filter(t => t.completed);
     if (!tt.length) { el.innerHTML = ''; return; }
@@ -111,7 +184,7 @@
       if (card) card.classList.add('completing');
       if (t.repeat) {
         const nd = new Date(t.date+'T'+t.time); nd.setDate(nd.getDate()+1);
-        tasks.push({...t, id: genId(), date: nd.toISOString().split('T')[0], completed: false, completedAt: null, createdAt: new Date().toISOString()});
+        tasks.push({...t, id: genId(), date: localDateStr(nd), completed: false, completedAt: null, createdAt: new Date().toISOString()});
       }
     } else {
       t.completed = false; t.completedAt = null;
@@ -130,14 +203,19 @@
 
   function bindSwipe() {
     $$('.task-card').forEach(c => {
-      c.addEventListener('touchstart', function(e) { this._sx = e.touches[0].clientX; }, {passive:true});
+      let startX = 0;
+      c.addEventListener('touchstart', function(e) {
+        startX = e.touches[0].clientX;
+        this.classList.remove('swiped');
+      }, {passive:true});
       c.addEventListener('touchmove', function(e) {
-        if (!this._sx) return;
-        const d = this._sx - e.touches[0].clientX;
-        if (d > 40) this.classList.add('swiped');
+        if (!startX) return;
+        const diff = startX - e.touches[0].clientX;
+        if (diff > 40) this.classList.add('swiped');
         else this.classList.remove('swiped');
       }, {passive:true});
-      c.addEventListener('touchend', function() { this._sx = null; });
+      c.addEventListener('touchend', function() { startX = 0; });
+      c.addEventListener('touchcancel', function() { startX = 0; this.classList.remove('swiped'); });
     });
     $$('.task-check').forEach(b => b.onclick = e => { e.stopPropagation(); toggleTask(b.dataset.id); });
     $$('.task-del').forEach(b => b.onclick = e => { e.stopPropagation(); deleteTask(b.dataset.id); });
@@ -146,7 +224,7 @@
   function openSheet() {
     $('#modalOverlay').classList.add('on');
     const d = new Date(); d.setMinutes(d.getMinutes()+30);
-    $('#taskDate').value = new Date().toISOString().split('T')[0];
+    $('#taskDate').value = localDateStr(new Date());
     $('#taskTime').value = d.toTimeString().slice(0,5);
     setTimeout(() => $('#taskTitle').focus(), 350);
     requestNotifPermission();
@@ -181,10 +259,7 @@
   }
 
   function requestNotifPermission() {
-    if (Notification.permission === 'granted') {
-      getFCMToken();
-      return;
-    }
+    if (Notification.permission === 'granted') { getFCMToken(); return; }
     if (Notification.permission === 'default') {
       Notification.requestPermission().then(function(perm) {
         if (perm === 'granted') getFCMToken();
@@ -195,34 +270,30 @@
   function getFCMToken() {
     if (!messaging) return;
     if (localStorage.getItem(TOKEN_KEY)) return;
-
     navigator.serviceWorker.ready.then(function(reg) {
       return messaging.getToken({
         vapidKey: 'BKQYaPfqw5pfmwASR3PeYpD2doRmXGNo2YmVJsO1436nFa8pUjH0cgBV3xTNwHhnLJkQ3NDMK5XFjm14lKM37ko',
         serviceWorkerRegistration: reg
       });
     }).then(function(token) {
-      if (token) {
-        localStorage.setItem(TOKEN_KEY, token);
-        console.log('FCM Token:', token);
-      }
-    }).catch(function(err) {
-      console.warn('FCM token error:', err);
-    });
+      if (token) { localStorage.setItem(TOKEN_KEY, token); console.log('FCM Token:', token); }
+    }).catch(function(err) { console.warn('FCM token error:', err); });
   }
 
   function onForegroundMessage() {
     if (!messaging) return;
-    messaging.onMessage(function(payload) {
-      const title = payload.notification?.title || 'Напоминалка';
-      const body = payload.notification?.body || '';
-      if (Notification.permission === 'granted') {
-        try { new Notification(title, { body: body, icon: 'icons/icon-192.png', requireInteraction: true }); } catch(e) {}
-      }
-    });
+    try {
+      messaging.onMessage(function(payload) {
+        const title = payload.notification?.title || 'Напоминалка';
+        const body = payload.notification?.body || '';
+        if (Notification.permission === 'granted') {
+          try { new Notification(title, { body: body, icon: 'icons/icon-192.png', requireInteraction: true }); } catch(e) {}
+        }
+      });
+    } catch(e) {}
   }
 
-  // Local notifications (fallback when app is open/backgrounded)
+  // Local notifications
   function scheduleLocalNotif() {
     timers.forEach(t => clearTimeout(t)); timers = [];
     tasks.forEach(t => {
@@ -241,9 +312,7 @@
   }
 
   function registerSW() {
-    if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.register('sw.js').catch(function(){});
-    }
+    if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(function(){});
   }
 
   function bindEvents() {
